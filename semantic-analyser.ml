@@ -847,6 +847,9 @@ let rec expr'_eq e1 e2 =
   
                        
 exception X_syntax_error;;
+exception X_invalid_expr;;
+exception Var_Not_Here_Param;;
+exception Var_Not_Here_Bound;;
 
 module type SEMANTICS = sig
   val run_semantics : expr -> expr'
@@ -871,7 +874,83 @@ let run_semantics expr =
 end;;
  (* struct Semantics *)
 
- (* let annotate_lexical_addresses e =  *)
- let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
+let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
 
- (* let annotate_lexical_addresses e = let exps = tags e in *)
+let rec lex env expr =  match expr with
+      | Const(x)-> Const'(x)
+      | Or(lst) -> Or'(List.map (lex env) lst )
+      | If(test, thn , alt) -> If'(lex env test, lex env thn , lex env alt)
+      | Seq(lst) -> Seq'(List.map (lex env) lst)
+      | LambdaSimple(slst, expr) -> LambdaSimple'(slst, lex (slst::env) expr) 
+      | LambdaOpt(slst ,s, expr) -> LambdaOpt'(slst, s, lex (slst::env) expr)
+      | Def(Var(s), vl) -> Def'(VarFree(s), lex env vl)
+      | Set(Var(vr),vl) -> Set'(check_vars env vr, lex env vl)
+      | Var(v) -> Var'(check_vars env v)
+      | Applic(expr, lst_expr) -> Applic'(lex env expr, (List.map (lex env) lst_expr))
+      | _-> raise X_invalid_expr
+
+
+and search_lst line_env vr n = 
+    match line_env with
+      | v::rest -> (if v=vr then n else search_lst rest vr (n+1))
+      | [] -> raise Var_Not_Here_Param
+
+and search_bound env vr minor = match env with
+      | env::rest -> (try(let major = (search_lst env vr 0) in (minor, major)) 
+              with Var_Not_Here_Param -> search_bound rest vr (minor+1))
+      | [] -> raise Var_Not_Here_Bound
+
+
+and check_vars env vr = match env with
+      | [] -> VarFree(vr)
+      | env::rest -> try VarParam(vr, search_lst env vr 0) 
+            with Var_Not_Here_Param -> (try(let (minor, major) = search_bound rest vr 0 
+                in VarBound(vr,minor, major))
+                  with Var_Not_Here_Bound -> VarFree(vr))                
+;;
+let annotate_lexical_addresses e = lex [] e ;;
+
+
+(* tests *)
+let lx e = List.map annotate_lexical_addresses (tags e);;
+
+let rec tails b e = 
+        if b != 0 then check_if_lambda e 
+        else
+
+        match e with
+      | If'(test, thn, alt) -> If'(test, check_if_app b thn, check_if_app b alt)
+      | Seq'(lst) -> (if (List.length lst) = 1 then check_if_app b (List.nth lst 0) 
+                        else let(lst, last) = pari_last lst [] in 
+                            Seq'(lst@[check_if_app b last]))
+      | Applic'(e, exps) ->  Applic'(e, List.map (tails 1) exps)
+      | LambdaSimple'(vars, body) -> LambdaSimple'(vars, check_if_app 0 body)
+      | LambdaOpt'(vars,s, body) -> LambdaOpt'(vars, s, check_if_app 0 body)
+      | Or'(lst) -> let(lst, last) = pari_last lst [] in Or'(lst@[check_if_app b last])
+      | _ -> e
+
+and pari_last lst_exp lst = 
+            if (List.length lst_exp) = 1 then 
+                  (lst, List.nth lst_exp 0) 
+                else match lst_exp with
+                  | f::rest -> pari_last rest (lst@[check_if_lambda f])
+                  | _ -> raise X_invalid_expr
+
+and check_if_app b expr = match expr with
+      | Applic'(x, w) -> ApplicTP'(x, List.map (tails 1) w)
+      | _ -> tails b expr
+      
+and check_if_lambda expr = match expr with
+    | LambdaSimple'(e, body) -> LambdaSimple'(e, check_if_app 0 body)
+    | LambdaOpt'(e, s, body) -> LambdaOpt'(e, s, check_if_app 0 body)
+    | Applic'(e, exps) ->  Applic'(e, List.map (tails 1) exps)
+    | Seq'(exps) -> Seq'(List.map (tails 1) exps)
+    | _-> expr
+      ;;
+
+
+let annotate_tail_calls e = match e with
+      | Applic'(e, exps) -> ApplicTP'(e, List.map (tails 1) exps)
+      | _ -> tails 0 e;;
+
+let tl e = List.map annotate_tail_calls (lx e);;
