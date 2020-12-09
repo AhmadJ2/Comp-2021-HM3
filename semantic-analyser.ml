@@ -543,6 +543,8 @@ module type TAG_PARSER = sig
 end
 module Tag_Parser : TAG_PARSER = struct
 
+
+
 let reserved_word_list =
   ["and"; "begin"; "cond"; "define"; "else";
    "if"; "lambda"; "let"; "let*"; "letrec"; "or";
@@ -842,7 +844,7 @@ let rec expr'_eq e1 e2 =
 	 (expr'_eq e1 e2) &&
 	   (List.for_all2 expr'_eq args1 args2)
   | _ -> false;;
-	
+  
                        
 exception X_syntax_error;;
 
@@ -866,6 +868,10 @@ let run_semantics expr =
     (annotate_tail_calls
        (annotate_lexical_addresses expr));;
   
-end;; (* struct Semantics *)
+end;;
+ (* struct Semantics *)
 
+ (* let annotate_lexical_addresses e =  *)
+ let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
 
+ (* let annotate_lexical_addresses e = let exps = tags e in *)
