@@ -307,3 +307,25 @@ and expand_quasiquote exp = match exp with
 let tag_parse_expressions e = List.map tag_parse e;;             
 end;;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LambdaSimple' (["a"],
+  ApplicTP' (Var' (VarParam' ("a", 0)),
+    [Applic' (Var' (VarParam' ("a", 0)), [LambdaSimple' (["b"],
+      ApplicTP' (Var' (VarParam' ("b", [Applic' (Var' (VarParam' ("b", [Applic' (Var' (VarBound' ("a",
+        0)), 0)),
+          0, 0)),
+            [Var' (VarFree' "c")])])]))])]))

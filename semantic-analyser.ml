@@ -847,6 +847,9 @@ let rec expr'_eq e1 e2 =
   
                        
 exception X_syntax_error;;
+exception X_FUCK_YOU;;
+exception Var_Not_Here_Param;;
+exception Var_Not_Here_Bound;;
 
 module type SEMANTICS = sig
   val run_semantics : expr -> expr'
@@ -871,7 +874,44 @@ let run_semantics expr =
 end;;
  (* struct Semantics *)
 
- (* let annotate_lexical_addresses e =  *)
- let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
+let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
 
- (* let annotate_lexical_addresses e = let exps = tags e in *)
+let rec lex env expr =  match expr with
+      | Const(x)-> Const'(x)
+      | Or(lst) -> Or'(List.map (lex env) lst )
+      | If(test, thn , alt) -> If'(lex env test, lex env thn , lex env alt)
+      | Seq(lst) -> Seq'(List.map (lex env) lst)
+      | LambdaSimple(slst, expr) -> LambdaSimple'(slst, lex (slst::env) expr) 
+      | LambdaOpt(slst ,s, expr) -> LambdaOpt'(slst, s, lex (slst::env) expr)
+      | Def(Var(s), vl) -> Def'(VarFree(s), lex env vl)
+      | Set(Var(vr),vl) -> Set'(check_vars env vr, lex env vl)
+      | Var(v) -> Var'(check_vars env v)
+      | Applic(expr, lst_expr) -> Applic'(lex env expr, (List.map (lex env) lst_expr))
+      | _-> raise X_FUCK_YOU
+
+
+and search_lst line_env vr n = 
+    match line_env with
+      | v::rest -> (if v=vr then n else search_lst rest vr (n+1))
+      | [] -> raise Var_Not_Here_Param
+
+and search_bound env vr minor = match env with
+      | env::rest -> (try(let major = (search_lst env vr 0) in (minor, major)) 
+              with Var_Not_Here_Param -> search_bound rest vr (minor+1))
+      | [] -> raise Var_Not_Here_Bound
+
+
+and check_vars env vr = match env with
+      | [] -> VarFree(vr)
+      | env::rest -> try VarParam(vr, search_lst env vr 0) 
+            with Var_Not_Here_Param -> (try(let (minor, major) = search_bound rest vr 0 
+                in VarBound(vr,minor, major))
+                  with Var_Not_Here_Bound -> VarFree(vr))
+
+
+
+(* let lx e = let t = tags e in List.map lex t;;
+
+
+
+          
