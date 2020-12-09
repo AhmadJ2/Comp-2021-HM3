@@ -933,7 +933,7 @@ and pari_last lst_exp lst =
             if (List.length lst_exp) = 1 then 
                   (lst, List.nth lst_exp 0) 
                 else match lst_exp with
-                  | f::rest -> pari_last rest (lst@[tails 1 f])
+                  | f::rest -> pari_last rest (lst@[check_if_lambda f])
                   | _ -> raise X_invalid_expr
 
 and check_if_app b expr = match expr with
@@ -943,6 +943,8 @@ and check_if_app b expr = match expr with
 and check_if_lambda expr = match expr with
     | LambdaSimple'(e, body) -> LambdaSimple'(e, check_if_app 0 body)
     | LambdaOpt'(e, s, body) -> LambdaOpt'(e, s, check_if_app 0 body)
+    | Applic'(e, exps) ->  Applic'(e, List.map (tails 1) exps)
+    | Seq'(exps) -> Seq'(List.map (tails 1) exps)
     | _-> expr
       ;;
 
@@ -950,3 +952,5 @@ and check_if_lambda expr = match expr with
 let annotate_tail_calls e = match e with
       | Applic'(e, exps) -> ApplicTP'(e, List.map (tails 1) exps)
       | _ -> tails 0 e;;
+
+let tl e = List.map annotate_tail_calls (lx e);;
