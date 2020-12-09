@@ -847,7 +847,7 @@ let rec expr'_eq e1 e2 =
   
                        
 exception X_syntax_error;;
-exception X_FUCK_YOU;;
+exception X_invalid_expr;;
 exception Var_Not_Here_Param;;
 exception Var_Not_Here_Bound;;
 
@@ -887,7 +887,7 @@ let rec lex env expr =  match expr with
       | Set(Var(vr),vl) -> Set'(check_vars env vr, lex env vl)
       | Var(v) -> Var'(check_vars env v)
       | Applic(expr, lst_expr) -> Applic'(lex env expr, (List.map (lex env) lst_expr))
-      | _-> raise X_FUCK_YOU
+      | _-> raise X_invalid_expr
 
 
 and search_lst line_env vr n = 
@@ -906,12 +906,47 @@ and check_vars env vr = match env with
       | env::rest -> try VarParam(vr, search_lst env vr 0) 
             with Var_Not_Here_Param -> (try(let (minor, major) = search_bound rest vr 0 
                 in VarBound(vr,minor, major))
-                  with Var_Not_Here_Bound -> VarFree(vr))
+                  with Var_Not_Here_Bound -> VarFree(vr))                
+;;
+let annotate_lexical_addresses e = lex [] e ;;
 
 
+(* tests *)
+let lx e = List.map annotate_lexical_addresses (tags e);;
 
-(* let lx e = let t = tags e in List.map lex t;;
+let rec tails b e = 
+        if b != 0 then check_if_lambda e 
+        else
+
+        match e with
+      | If'(test, thn, alt) -> If'(test, check_if_app b thn, check_if_app b alt)
+      | Seq'(lst) -> (if (List.length lst) = 1 then check_if_app b (List.nth lst 0) 
+                        else let(lst, last) = pari_last lst [] in 
+                            Seq'(lst@[check_if_app b last]))
+      | Applic'(e, exps) ->  Applic'(e, List.map (tails 1) exps)
+      | LambdaSimple'(vars, body) -> LambdaSimple'(vars, check_if_app 0 body)
+      | LambdaOpt'(vars,s, body) -> LambdaOpt'(vars, s, check_if_app 0 body)
+      | Or'(lst) -> let(lst, last) = pari_last lst [] in Or'(lst@[check_if_app b last])
+      | _ -> e
+
+and pari_last lst_exp lst = 
+            if (List.length lst_exp) = 1 then 
+                  (lst, List.nth lst_exp 0) 
+                else match lst_exp with
+                  | f::rest -> pari_last rest (lst@[tails 1 f])
+                  | _ -> raise X_invalid_expr
+
+and check_if_app b expr = match expr with
+      | Applic'(x, w) -> ApplicTP'(x, List.map (tails 1) w)
+      | _ -> tails b expr
+      
+and check_if_lambda expr = match expr with
+    | LambdaSimple'(e, body) -> LambdaSimple'(e, check_if_app 0 body)
+    | LambdaOpt'(e, s, body) -> LambdaOpt'(e, s, check_if_app 0 body)
+    | _-> expr
+      ;;
 
 
-
-          
+let annotate_tail_calls e = match e with
+      | Applic'(e, exps) -> ApplicTP'(e, List.map (tails 1) exps)
+      | _ -> tails 0 e;;
