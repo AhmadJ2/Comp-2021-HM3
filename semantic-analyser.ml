@@ -979,7 +979,25 @@ and levels var seq lvl = raise X_not_yet_implemented
 
 and check_var_bound = raise X_not_yet_implemented
 
-and change_to_box seq = raise X_not_yet_implemented;;
+and change_to_box var minor seq = let seq = match seq with | Seq'(seq) -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@seq | _ -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@[seq] in 
+            Seq'(List.map (change_to_box_helper var) seq)
+
+and check_if_in_there vars var = List.exists (fun x-> x=var) vars
+
+and change_to_box_helper var exp  = match exp with
+      | Set'(VarParam(v, pos), exp) -> BoxSet'(VarParam(v, pos), change_to_box_helper var exp)
+      | Set'(VarBound(v, min, maj), exp) -> BoxSet'(VarBound(v, min, maj), change_to_box_helper var exp)
+      | Var'(v) ->  (match v with | VarParam(vr, m) -> if vr=var then BoxGet'(v) else exp
+                                  | VarBound(vr, min, maj) -> if vr=var then BoxGet'(v) else exp
+                                  |_ -> exp)
+      | Applic'(op, seq) -> Applic'(change_to_box_helper var op, List.map (change_to_box_helper var) seq)
+      | ApplicTP'(op, seq) -> ApplicTP'(change_to_box_helper var op, List.map (change_to_box_helper var) seq)
+      | If'(test, thn, alt) -> If'(change_to_box_helper var test, change_to_box_helper var thn, change_to_box_helper var alt)
+      | Or'(seq) -> Or'(List.map (change_to_box_helper var) seq)
+      | Seq'(seq) -> Seq'(List.map (change_to_box_helper var) seq)
+      | LambdaSimple'(vars, seq) -> if check_if_in_there vars var then exp else LambdaSimple'(vars, change_to_box_helper var seq)
+      | LambdaOpt'(vars, s, seq) -> if (check_if_in_there vars var) || s=var then exp else LambdaOpt'(vars, s, change_to_box_helper var seq)
+      | _ -> raise X_Box;;
 
 let box_set e = boxes e;;
 
