@@ -969,7 +969,7 @@ let rec boxes exprs = match exprs with
 
 and check_bounds vars seq = 
     match vars with
-        | v::rest -> (let(read, write) = levels v seq 3 in 
+        | v::rest -> (let(read, write) = levels v seq (-1) in 
               if (read = 3 || write = 3) then check_bounds rest seq else 
               raise X_not_yet_implemented
               )
@@ -977,7 +977,20 @@ and check_bounds vars seq =
 
 and levels var seq lvl = raise X_not_yet_implemented
 
-and check_var_bound = raise X_not_yet_implemented
+(* we need to check if read and write occured in the same exp or in different exps, like read and wrrite in the same exp or everyone in separate exp *)
+and check_var_for_box exp var lvl = match exp with 
+        | Var'(VarParam(v, _)) -> if v=var then (lvl, 3) else (3, 3)
+        | Var'(VarBound(v, _, _)) -> if v=var then (lvl, 3) else (3, 3)
+        | Set'(v, exp) -> let(read, write) = check_var_for_box exp var lvl in
+                          let v = match v with |VarParam(v, _) -> v | VarBound(v, _, _) -> v| _-> raise X_Box in
+                            if v=var then (read, check_level lvl write) else (read, write)
+        
+        | _ -> raise X_Box
+        (* | If'(test, thn, alt) -> let(read_test, write_test) = check_var_for_box test var lvl in
+                                  let(read_thn, write_thn) = check_var_for_box thn var lvl in
+                                  let(read_alt, write_alt) = check_var_for_box alt var lvl in *)
+
+and check_level lvl1 lvl2 = if lvl1=3 then lvl2 else (if lvl2=3 then lvl1 else (if lvl1>lvl2 then lvl1 else lvl2))
 
 and change_to_box var minor seq = let seq = match seq with | Seq'(seq) -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@seq | _ -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@[seq] in 
             Seq'(List.map (change_to_box_helper var) seq)
