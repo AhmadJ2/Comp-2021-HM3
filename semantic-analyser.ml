@@ -235,7 +235,7 @@ let make_paired nt_left nt_right nt =
   let nt = pack nt (function (e, _) -> e) in
     nt;;
    
-let nt_whitespaces = star (char ' ');;
+let nt_whitespaces = star (disj (char '\n') (char ' '));;
 
 let make_spaced nt = make_paired nt_whitespaces nt_whitespaces nt;;
 
@@ -850,6 +850,7 @@ exception X_syntax_error;;
 exception X_invalid_expr;;
 exception Var_Not_Here_Param;;
 exception Var_Not_Here_Bound;;
+exception X_Box;;
 
 module type SEMANTICS = sig
   val run_semantics : expr -> expr'
@@ -911,7 +912,6 @@ and check_vars env vr = match env with
 let annotate_lexical_addresses e = lex [] e ;;
 
 
-(* tests *)
 let lx e = List.map annotate_lexical_addresses (tags e);;
 
 let rec tails b e = 
@@ -954,3 +954,68 @@ let annotate_tail_calls e = match e with
       | _ -> tails 0 e;;
 
 let tl e = List.map annotate_tail_calls (lx e);;
+
+let rec boxes exprs = match exprs with
+    | LambdaSimple'(vars, seq) -> LambdaSimple'(vars, check_bounds vars seq )
+    | LambdaOpt'(vars,s, seq) -> LambdaOpt'(vars, s, check_bounds (vars@[s]) seq )
+    | If'(test, thn, alt) -> If'(boxes test, boxes thn, boxes alt)
+    | Or'(seq) -> Or'(List.map boxes seq)
+    | Set'(var, vl) -> Set'(var, boxes vl)
+    | Seq'(seq) -> Seq'(List.map boxes seq)
+    | Def'(var, vl) -> Def'(var, boxes vl)
+    | Applic'(op, seq) -> Applic'(boxes op, List.map boxes seq)
+    | ApplicTP'(op, seq) -> ApplicTP'(boxes op, List.map boxes seq)
+    | _ -> raise X_Box
+
+and check_bounds vars seq = 
+    match vars with
+        | v::rest -> (let(read, write) = levels v seq 3 in 
+              if (read = 3 || write = 3) then check_bounds rest seq else 
+              raise X_not_yet_implemented
+              )
+        | [] -> raise X_not_yet_implemented
+
+and levels var seq lvl = raise X_not_yet_implemented
+
+and check_var_bound = raise X_not_yet_implemented
+
+and change_to_box seq = raise X_not_yet_implemented;;
+
+let box_set e = boxes e;;
+
+let bx e = List.map box_set (tl e);;
+
+
+(*
+box
+(lambda (n) (lambda () (set! n (+ n 1)) n) (lambda () (set! n 0))))
+
+no box
+(lambda (n) 
+  (lambda ()
+    (list 
+      (lambda ()
+        (set! n (+ n 1))
+          n) 
+      (lambda ()
+        (set! n 0))
+    )
+  )
+)
+
+box
+(lambda (n) 
+  (list
+    (begin
+      (set! n (+ n n)) 
+      n)
+    (lambda () n)
+  )
+)
+
+
+(lambda (n)
+  (lambda () n)
+  (lambda () (lambda () n))
+  )
+  *)
