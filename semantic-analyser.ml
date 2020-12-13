@@ -965,47 +965,58 @@ let rec boxes exprs = match exprs with
     | Def'(var, vl) -> Def'(var, boxes vl)
     | Applic'(op, seq) -> Applic'(boxes op, List.map boxes seq)
     | ApplicTP'(op, seq) -> ApplicTP'(boxes op, List.map boxes seq)
-    | _ -> raise X_Box
+    | _ -> exprs
 
 and chech_if_vars_need_to_box vars minor seq = 
     match vars with
         | v::rest -> (let change = levels v 0 seq  in 
               if change=1 then 
               (let seq = change_to_box v minor seq in 
-                      chech_if_vars_need_to_box rest (minor+1) seq) 
+                    chech_if_vars_need_to_box rest (minor + 1) seq) 
               else 
                     chech_if_vars_need_to_box rest (minor + 1) seq
               )
         | [] -> seq
 
 and levels var f seq = match seq with
-                    | Seq'(seq) -> check_seq seq f var
-                    | LambdaOpt'(_) -> 0
-                    | LambdaSimple'(_) -> 0
-                    | Or'(seq) -> if (List.exists (fun x -> x=1) (List.map (levels var f) seq)) then 1 else 0
-                    (* |  *)
-                    (* | _ -> check_var_for_box var f seq *)
+      | Var'(VarParam(v, _)) -> 0
+      | Var'(VarBound(v, _, _)) -> 0
+      | Set'(v, expr) -> levels var f expr
+      | Seq'(seq) -> check_seq var f seq 
+      | LambdaOpt'(_) -> 0
+      | LambdaSimple'(_) -> 0
+      | If'(test ,thn, alt) -> let test = levels var f test in
+                                let thn = levels var f thn in
+                                let alt = levels var f alt in
+                                    if test=1 || thn=1||alt=1 then 1 else 0
+      | Or'(seq) -> check_seq var f seq 
+      | Applic'(op, seq) -> let op = levels var f op in
+                            let seq = check_seq var 1 seq in
+                              if seq = 1 || op = 1 then 1 else 0
+      | ApplicTP'(op, seq) -> let op = levels var f op in
+                              let seq = check_seq var 1 seq in
+                                if seq = 1 || op = 1 then 1 else 0                              
+      (* if (List.exists (fun x -> x=1) (List.map (levels var f) seq)) then 1 else 0 *)
+      | _ -> 0
 
-and check_var_for_box var f exp = match exp with 
+and check_lower_levels var f exp = match exp with 
       | Var'(VarParam(v, _)) -> (f,0)
-      | Set'(VarParam(v, _), exp) -> if v=var then (let (read, write) = check_var_for_box var f exp in (read, if f>write then f else write)) else check_var_for_box var f exp
+      | Set'(VarParam(v, _), exp) -> if v=var then (let (read, write) = check_lower_levels var f exp in (read, if f>write then f else write)) else check_lower_levels var f exp
       | Var'(VarBound(v, _, _)) -> if v=var then (1, 0) else (0,0)
-      | Set'(VarBound(v, _, _), exp) -> let (read, write) = check_var_for_box var f exp in (read, if v=var then 1 else write)
-      (* | LambdaSimple'(vars, seq) -> if (check_if_in_there vars var) then (0,0) else levels var 0 seq
-      | LambdaOpt'(vars, s, seq) -> if ((check_if_in_there vars var)|| s=var) then (0,0) else levels var 0 seq *)
-      (* | Applic'(opt, seq) -> let(read, write) = check_seq seq 1 var in  *)
+      | Set'(VarBound(v, _, _), exp) -> let (read, write) = check_lower_levels var f exp in (read, if v=var then 1 else write)
+      (* todo: check cases for lambda in lower levels in case it was called from Or, App, Seq *)
+      (* | LambdaSimple'(vars, seq) -> if (check_if_in_there vars var) then (0,0) else exp_or_seq var 0 seq *)
+      (* | LambdaOpt'(vars, s, seq) -> if ((check_if_in_there vars var)|| s=var) then (0,0) else exp_or_seq var 0 seq *)
+      (* | Applic'(opt, seq) -> *)
       | _-> (0,0)
 
 
 and do_the_job (acc_read, acc_write) seq = match seq with
-              | (read, write):: rest -> if ((read=1 && acc_write>0) || write=1 && acc_read>0) then (1,1) else (do_the_job (read+acc_read, write+acc_write) rest)
-              | [] -> (0, 0)
+              | (read, write):: rest -> if ((read=1 && acc_write>0) || write=1 && acc_read>0) then 1 else (do_the_job (read+acc_read, write+acc_write) rest)
+              | [] -> 0
 
-and check_seq seq f var = let(seq_read_write) = List.map (check_var_for_box var f) seq in do_the_job (0,0) seq_read_write
+and check_seq var f seq = let(seq_read_write) = List.map (check_lower_levels var f) seq in do_the_job (0,0) seq_read_write
                               
-
-and check_level lvl1 lvl2 = if lvl1=3 then lvl2 else (if lvl2=3 then lvl1 else (if lvl1>lvl2 then lvl1 else lvl2))
-
 and change_to_box var minor seq = let seq = match seq with | Seq'(seq) -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@seq | _ -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@[seq] in 
             Seq'(List.map (change_to_box_helper var) seq)
 
@@ -1029,38 +1040,3 @@ and change_to_box_helper var exp  = match exp with
 let box_set e = boxes e;;
 
 let bx e = List.map box_set (tl e);;
-
-
-(*
-box
-(lambda (n) (lambda () (set! n (+ n 1)) n) (lambda () (set! n 0))))
-
-no box
-(lambda (n) 
-  (lambda ()
-    (list 
-      (lambda ()
-        (set! n (+ n 1))
-          n) 
-      (lambda ()
-        (set! n 0))
-    )
-  )
-)
-
-box
-(lambda (n) 
-  (list
-    (begin
-      (set! n (+ n n)) 
-      n)
-    (lambda () n)
-  )
-)
-
-
-(lambda (n)
-  (lambda () n)
-  (lambda () (lambda () n))
-  )
-  *)
