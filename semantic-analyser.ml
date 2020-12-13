@@ -956,8 +956,8 @@ let annotate_tail_calls e = match e with
 let tl e = List.map annotate_tail_calls (lx e);;
 
 let rec boxes exprs = match exprs with
-    | LambdaSimple'(vars, seq) -> LambdaSimple'(vars, check_bounds vars seq )
-    | LambdaOpt'(vars,s, seq) -> LambdaOpt'(vars, s, check_bounds (vars@[s]) seq )
+    | LambdaSimple'(vars, seq) -> LambdaSimple'(vars, chech_if_vars_need_to_box vars 0 (boxes seq) )
+    | LambdaOpt'(vars,s, seq) -> LambdaOpt'(vars, s, chech_if_vars_need_to_box (vars@[s]) 0 (boxes seq) )
     | If'(test, thn, alt) -> If'(boxes test, boxes thn, boxes alt)
     | Or'(seq) -> Or'(List.map boxes seq)
     | Set'(var, vl) -> Set'(var, boxes vl)
@@ -967,17 +967,44 @@ let rec boxes exprs = match exprs with
     | ApplicTP'(op, seq) -> ApplicTP'(boxes op, List.map boxes seq)
     | _ -> raise X_Box
 
-and check_bounds vars seq = 
+and chech_if_vars_need_to_box vars minor seq = 
     match vars with
-        | v::rest -> (let(read, write) = levels v seq 3 in 
-              if (read = 3 || write = 3) then check_bounds rest seq else 
-              raise X_not_yet_implemented
+        | v::rest -> (let change = levels v 0 seq  in 
+              if change=1 then 
+              (let seq = change_to_box v minor seq in 
+                      chech_if_vars_need_to_box rest (minor+1) seq) 
+              else 
+                    chech_if_vars_need_to_box rest (minor + 1) seq
               )
-        | [] -> raise X_not_yet_implemented
+        | [] -> seq
 
-and levels var seq lvl = raise X_not_yet_implemented
+and levels var f seq = match seq with
+                    | Seq'(seq) -> check_seq seq f var
+                    | LambdaOpt'(_) -> 0
+                    | LambdaSimple'(_) -> 0
+                    | Or'(seq) -> if (List.exists (fun x -> x=1) (List.map (levels var f) seq)) then 1 else 0
+                    (* |  *)
+                    (* | _ -> check_var_for_box var f seq *)
 
-and check_var_bound = raise X_not_yet_implemented
+and check_var_for_box var f exp = match exp with 
+      | Var'(VarParam(v, _)) -> (f,0)
+      | Set'(VarParam(v, _), exp) -> if v=var then (let (read, write) = check_var_for_box var f exp in (read, if f>write then f else write)) else check_var_for_box var f exp
+      | Var'(VarBound(v, _, _)) -> if v=var then (1, 0) else (0,0)
+      | Set'(VarBound(v, _, _), exp) -> let (read, write) = check_var_for_box var f exp in (read, if v=var then 1 else write)
+      (* | LambdaSimple'(vars, seq) -> if (check_if_in_there vars var) then (0,0) else levels var 0 seq
+      | LambdaOpt'(vars, s, seq) -> if ((check_if_in_there vars var)|| s=var) then (0,0) else levels var 0 seq *)
+      (* | Applic'(opt, seq) -> let(read, write) = check_seq seq 1 var in  *)
+      | _-> (0,0)
+
+
+and do_the_job (acc_read, acc_write) seq = match seq with
+              | (read, write):: rest -> if ((read=1 && acc_write>0) || write=1 && acc_read>0) then (1,1) else (do_the_job (read+acc_read, write+acc_write) rest)
+              | [] -> (0, 0)
+
+and check_seq seq f var = let(seq_read_write) = List.map (check_var_for_box var f) seq in do_the_job (0,0) seq_read_write
+                              
+
+and check_level lvl1 lvl2 = if lvl1=3 then lvl2 else (if lvl2=3 then lvl1 else (if lvl1>lvl2 then lvl1 else lvl2))
 
 and change_to_box var minor seq = let seq = match seq with | Seq'(seq) -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@seq | _ -> [Set'(VarParam(var, minor), Box'(VarParam(var, minor)))]@[seq] in 
             Seq'(List.map (change_to_box_helper var) seq)
