@@ -58,14 +58,13 @@ module type SEMANTICS = sig
   val annotate_lexical_addresses : expr -> expr'
   val annotate_tail_calls : expr' -> expr'
   val box_set : expr' -> expr'
-  val bx : string -> expr' list
-  val tl : string -> expr' list
 end;;
 
 module Semantics : SEMANTICS = struct
 
  (* struct Semantics *)
-(* end;; *)
+
+(* let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));; *)
 
 let rec lex env expr =  match expr with
       | Const(x)-> Const'(x)
@@ -102,9 +101,12 @@ and check_vars env vr = match env with
 let annotate_lexical_addresses e = lex [] e ;;
 
 
+(* let lx e = List.map annotate_lexical_addresses (tags e);; *)
+
 let rec tails b e = 
         if b != 0 then check_if_lambda e 
         else
+
         match e with
       | If'(test, thn, alt) -> If'(test, check_if_app b thn, check_if_app b alt)
       | Seq'(lst) -> (if (List.length lst) = 1 then check_if_app b (List.nth lst 0) 
@@ -140,6 +142,7 @@ let annotate_tail_calls e = match e with
       | Applic'(e, exps) -> ApplicTP'(e, List.map (tails 1) exps)
       | _ -> tails 0 e;;
 
+(* let tl e = List.map annotate_tail_calls (lx e);; *)
 
 let rec boxes exprs = match exprs with
     | LambdaSimple'(vars, seq) -> LambdaSimple'(vars, chech_if_vars_need_to_box vars 0 (boxes seq) )
@@ -157,8 +160,8 @@ and chech_if_vars_need_to_box vars minor seq =
     match vars with
         | v::rest -> (let change = levels v 0 seq in 
               if change = 1 then 
-              (let new_seq = change_to_box v minor seq in 
-                    chech_if_vars_need_to_box rest (minor + 1) new_seq) 
+              (let seq = change_to_box v minor seq in 
+                    chech_if_vars_need_to_box rest (minor + 1) seq) 
               else 
                     chech_if_vars_need_to_box rest (minor + 1) seq
               )
@@ -237,17 +240,11 @@ and change_to_box_helper var exp  = match exp with
 
 let box_set e = boxes e;;
 
-
+(* let bx e = List.map box_set (tl e);; *)
 
 let run_semantics expr =
   box_set
     (annotate_tail_calls
        (annotate_lexical_addresses expr));;
-
-
-let tags e = (Tag_Parser.tag_parse_expressions (Reader.read_sexprs e));;
-let lx e = List.map annotate_lexical_addresses (tags e);;
-let tl e = List.map annotate_tail_calls (lx e);;
-let bx e = List.map box_set (tl e);;
 
 end;;
